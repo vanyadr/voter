@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
     "secrets": "node scripts/generate-secrets.mjs",
+    "doctor": "node --env-file-if-exists=.env.local --import tsx scripts/check-connection.ts",
     "format": "prettier --write src tests scripts README.md '*.json' '*.ts' '*.mjs' '.github/**/*.yml'"
   },
   "dependencies": {

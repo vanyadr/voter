@@ -10,41 +10,37 @@ import {
   type Identity,
 } from "./crypto";
 import type { Dashboard, Event, Member, OwnBallot, Result } from "./model";
+import { connectionConfig } from "./connection";
 
 export function configured() {
-  return !!(
-    process.env.SUPABASE_URL &&
-    process.env.SUPABASE_SERVICE_ROLE_KEY &&
-    (process.env.APP_SECRET?.length ?? 0) >= 32 &&
-    (process.env.BOOTSTRAP_CODE?.length ?? 0) >= 12
-  );
+  try {
+    connectionConfig();
+    return true;
+  } catch {
+    return false;
+  }
 }
 export function secret() {
-  if (!configured()) throw new Error("Приложение ещё не настроено.");
-  return process.env.APP_SECRET!;
+  return connectionConfig().secret;
 }
 let client: SupabaseClient | undefined;
 export function db() {
-  if (!configured()) throw new Error("Приложение ещё не настроено.");
-  return (client ??= createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-      },
-      global: {
-        fetch: (input, init) =>
-          fetch(input, {
-            ...init,
-            cache: "no-store",
-            signal: AbortSignal.timeout(12000),
-          }),
-      },
+  const config = connectionConfig();
+  return (client ??= createClient(config.url, config.key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
     },
-  ));
+    global: {
+      fetch: (input, init) =>
+        fetch(input, {
+          ...init,
+          cache: "no-store",
+          signal: AbortSignal.timeout(12000),
+        }),
+    },
+  }));
 }
 export async function identity(): Promise<Identity | null> {
   if (!configured()) return null;

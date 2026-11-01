@@ -24,6 +24,7 @@ import {
   setIdentity,
 } from "@/lib/server";
 import { validScores, type AccessCode, type ActionResult } from "@/lib/model";
+import { databaseFailure, loginDiagnostic } from "@/lib/connection";
 
 export async function loginAction(
   _previous: ActionResult,
@@ -35,6 +36,7 @@ export async function loginAction(
       error: "Проверьте код: он должен содержать не менее 12 символов.",
     };
   let destination = "/dashboard";
+  let stage = "rate_limit";
   try {
     const h = await headers();
     // Vercel overwrites this header; other hosts share a conservative fallback bucket.
@@ -43,36 +45,46 @@ export async function loginAction(
     const attempt = await db().rpc("voter_login_attempt", {
       p_key: hashValue(`login:${ip}`, secret()),
     });
-    if (attempt.error) throw attempt.error;
+    if (attempt.error) throw databaseFailure(attempt.error, attempt.status);
     if (!attempt.data)
       return { error: "Слишком много попыток. Повторите через 15 минут." };
     const candidate = hashCode(code, secret());
     if (safeEqual(candidate, hashCode(process.env.BOOTSTRAP_CODE!, secret()))) {
-      const { count, error } = await db()
+      stage = "bootstrap_lookup";
+      const { count, error, status } = await db()
         .from("events")
         .select("id", { count: "exact", head: true });
-      if (error) throw error;
+      if (error) throw databaseFailure(error, status);
+      if (count === null) throw new Error("Missing event count");
       if (count !== 0)
         return {
           error: "Первичная настройка уже выполнена. Используйте личный код.",
         };
+      stage = "session";
       await setIdentity({ bootstrap: true });
       destination = "/setup";
     } else {
-      const { data, error } = await db()
+      stage = "member_lookup";
+      const { data, error, status } = await db()
         .from("members")
         .select("id")
         .eq("code_hash", candidate)
         .maybeSingle();
-      if (error) throw error;
+      if (error) throw databaseFailure(error, status);
       if (!data)
         return { error: "Код не найден. Проверьте его или обратитесь к жюри." };
+      stage = "session";
       await setIdentity({ memberId: data.id });
     }
-  } catch {
-    return {
-      error: "Не удалось войти. Проверьте подключение и настройку базы данных.",
-    };
+  } catch (error) {
+    const diagnostic = loginDiagnostic(error);
+    console.error("[voter.login]", {
+      stage,
+      category: diagnostic.category,
+      upstreamCode: diagnostic.upstreamCode,
+      status: diagnostic.status,
+    });
+    return { error: diagnostic.message };
   }
   redirect(destination);
 }
