@@ -9,13 +9,14 @@ import {
 } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { LoginForm } from "@/components/login-form";
-import { configured, identity } from "@/lib/server";
+import { configurationProblems, identity } from "@/lib/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function LoginPage() {
   const who = await identity();
   if (who) redirect("memberId" in who ? "/dashboard" : "/setup");
+  const problems = configurationProblems();
   return (
     <main className="login-page">
       <section className="login-story">
@@ -71,7 +72,10 @@ export default async function LoginPage() {
             Введите личный код, чтобы перейти
             <br className="desktop-break" /> к оценке выступлений.
           </p>
-          <LoginForm enabled={configured()} />
+          <LoginForm
+            enabled={problems.length === 0}
+            configurationProblems={problems}
+          />
           <div className="privacy-note">
             <span>
               <Check size={14} />

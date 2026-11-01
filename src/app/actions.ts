@@ -83,6 +83,8 @@ export async function loginAction(
       category: diagnostic.category,
       upstreamCode: diagnostic.upstreamCode,
       status: diagnostic.status,
+      configurationField: diagnostic.configurationField,
+      configurationReason: diagnostic.configurationReason,
     });
     return { error: diagnostic.message };
   }

@@ -312,6 +312,16 @@ strong {
   }
 }
 
+.configuration-problems {
+  list-style: disc;
+  padding-left: 18px;
+  margin: 10px 0;
+  overflow-wrap: anywhere;
+}
+.configuration-problems li + li {
+  margin-top: 8px;
+}
+
 /* Entry */
 .login-page {
   min-height: 100svh;

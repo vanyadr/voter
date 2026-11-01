@@ -5,6 +5,8 @@ import {
   ConfigurationError,
   databaseFailure,
   loginDiagnostic,
+  configurationIssues,
+  configurationIssueMessage,
 } from "../src/lib/connection";
 
 const env = {
@@ -100,5 +102,45 @@ test("upstream error text and untrusted machine codes never leak through diagnos
       JSON.stringify(loginDiagnostic(error)).includes(marker),
       false,
     );
+  }
+});
+
+test("configuration diagnostics identify all missing fields without exposing any values", () => {
+  assert.deepEqual(configurationIssues({}), [
+    { field: "SUPABASE_URL", reason: "missing" },
+    { field: "SUPABASE_SERVICE_ROLE_KEY", reason: "missing" },
+    { field: "APP_SECRET", reason: "missing" },
+    { field: "BOOTSTRAP_CODE", reason: "missing" },
+  ]);
+  const invalid = {
+    ...env,
+    APP_SECRET: "PRIVATE_SHORT_SECRET",
+    BOOTSTRAP_CODE: "PRIVATE",
+  };
+  const issues = configurationIssues(invalid);
+  assert.deepEqual(issues, [
+    { field: "APP_SECRET", reason: "too_short" },
+    { field: "BOOTSTRAP_CODE", reason: "too_short" },
+  ]);
+  const output = issues.map(configurationIssueMessage).join("\n");
+  assert.match(output, /APP_SECRET.*32/);
+  assert.match(output, /BOOTSTRAP_CODE.*12/);
+  assert.equal(output.includes("PRIVATE"), false);
+});
+
+test("CONFIG login errors include the offending field and a safe corrective instruction", () => {
+  for (const field of [
+    "SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "APP_SECRET",
+    "BOOTSTRAP_CODE",
+  ] as const) {
+    const diagnostic = loginDiagnostic(
+      new ConfigurationError(field, "missing"),
+    );
+    assert.equal(diagnostic.configurationField, field);
+    assert.equal(diagnostic.configurationReason, "missing");
+    assert.match(diagnostic.message, new RegExp(field));
+    assert.match(diagnostic.message, /Redeploy/);
   }
 });

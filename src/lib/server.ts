@@ -10,15 +10,17 @@ import {
   type Identity,
 } from "./crypto";
 import type { Dashboard, Event, Member, OwnBallot, Result } from "./model";
-import { connectionConfig } from "./connection";
+import {
+  connectionConfig,
+  configurationIssues,
+  configurationIssueMessage,
+} from "./connection";
 
 export function configured() {
-  try {
-    connectionConfig();
-    return true;
-  } catch {
-    return false;
-  }
+  return configurationIssues().length === 0;
+}
+export function configurationProblems() {
+  return configurationIssues().map(configurationIssueMessage);
 }
 export function secret() {
   return connectionConfig().secret;

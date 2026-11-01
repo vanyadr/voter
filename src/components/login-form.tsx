@@ -4,7 +4,13 @@ import { ArrowRight, KeyRound, LoaderCircle } from "lucide-react";
 import { loginAction } from "@/app/actions";
 import type { ActionResult } from "@/lib/model";
 
-export function LoginForm({ enabled }: { enabled: boolean }) {
+export function LoginForm({
+  enabled,
+  configurationProblems = [],
+}: {
+  enabled: boolean;
+  configurationProblems?: string[];
+}) {
   const [state, action, pending] = useActionState(
     loginAction,
     {} as ActionResult,
@@ -38,10 +44,19 @@ export function LoginForm({ enabled }: { enabled: boolean }) {
         </p>
       )}
       {!enabled && (
-        <p className="form-error" role="status">
-          Приложение ещё не настроено. Организатору нужно подключить базу данных
-          и задать переменные окружения по инструкции в репозитории.
-        </p>
+        <div className="form-error" role="status">
+          <p>Текущий деплой не получил корректные настройки:</p>
+          <ul className="configuration-problems">
+            {configurationProblems.map((problem) => (
+              <li key={problem}>{problem}</li>
+            ))}
+          </ul>
+          <p>
+            В Vercel откройте настройки проекта → Environments → Production,
+            сохраните переменные и выполните Redeploy. Секретные значения здесь
+            не отображаются.
+          </p>
+        </div>
       )}
       <button className="button primary full" disabled={!enabled || pending}>
         {pending ? (

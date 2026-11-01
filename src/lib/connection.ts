@@ -6,45 +6,86 @@ export type ConnectionConfig = {
   bootstrapCode: string;
 };
 
+export type ConfigurationField =
+  | "SUPABASE_URL"
+  | "SUPABASE_SERVICE_ROLE_KEY"
+  | "APP_SECRET"
+  | "BOOTSTRAP_CODE";
+export type ConfigurationIssue = {
+  field: ConfigurationField;
+  reason: "missing" | "format" | "too_short";
+};
+
 export class ConfigurationError extends Error {
-  constructor(readonly field: string) {
+  constructor(
+    readonly field: ConfigurationField,
+    readonly reason: ConfigurationIssue["reason"] = "format",
+  ) {
     super(`Check environment variable ${field}`);
     this.name = "ConfigurationError";
   }
 }
 
+export function configurationIssues(
+  env: Record<string, string | undefined> = process.env,
+): ConfigurationIssue[] {
+  const issues: ConfigurationIssue[] = [];
+  const url = env.SUPABASE_URL?.trim();
+  const key = env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (!url) issues.push({ field: "SUPABASE_URL", reason: "missing" });
+  else
+    try {
+      const parsed = new URL(url);
+      const local = ["localhost", "127.0.0.1", "[::1]"].includes(
+        parsed.hostname,
+      );
+      if (
+        (parsed.protocol !== "https:" &&
+          !(local && parsed.protocol === "http:")) ||
+        parsed.pathname !== "/" ||
+        parsed.search ||
+        parsed.hash ||
+        parsed.username ||
+        parsed.password
+      ) {
+        throw new Error("Not a project URL");
+      }
+    } catch {
+      issues.push({ field: "SUPABASE_URL", reason: "format" });
+    }
+  if (!key)
+    issues.push({ field: "SUPABASE_SERVICE_ROLE_KEY", reason: "missing" });
+  else if (/[\s"']/.test(key))
+    issues.push({ field: "SUPABASE_SERVICE_ROLE_KEY", reason: "format" });
+  for (const [field, minimum] of [
+    ["APP_SECRET", 32],
+    ["BOOTSTRAP_CODE", 12],
+  ] as const) {
+    if (!env[field]?.trim()) issues.push({ field, reason: "missing" });
+    else if (env[field]!.length < minimum)
+      issues.push({ field, reason: "too_short" });
+  }
+  return issues;
+}
+
+export function configurationIssueMessage(issue: ConfigurationIssue): string {
+  if (issue.reason === "missing")
+    return `${issue.field}: переменная отсутствует или пуста в текущем деплое.`;
+  if (issue.field === "SUPABASE_URL")
+    return "SUPABASE_URL: нужен URL проекта вида https://ваш-проект.supabase.co, без /rest/v1, ссылки на dashboard и кавычек.";
+  if (issue.field === "SUPABASE_SERVICE_ROLE_KEY")
+    return "SUPABASE_SERVICE_ROLE_KEY: уберите кавычки и внутренние пробелы из значения серверного ключа.";
+  return `${issue.field}: значение должно содержать не менее ${issue.field === "APP_SECRET" ? 32 : 12} символов.`;
+}
+
 export function connectionConfig(
   env: Record<string, string | undefined> = process.env,
 ): ConnectionConfig {
-  const url = env.SUPABASE_URL?.trim();
-  const key = env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-  if (!url) throw new ConfigurationError("SUPABASE_URL");
-  try {
-    const parsed = new URL(url);
-    const local = ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
-    if (
-      (parsed.protocol !== "https:" &&
-        !(local && parsed.protocol === "http:")) ||
-      parsed.pathname !== "/" ||
-      parsed.search ||
-      parsed.hash ||
-      parsed.username ||
-      parsed.password
-    ) {
-      throw new Error("Not a project URL");
-    }
-  } catch {
-    throw new ConfigurationError("SUPABASE_URL");
-  }
-  if (!key || /[\s"']/.test(key))
-    throw new ConfigurationError("SUPABASE_SERVICE_ROLE_KEY");
-  if ((env.APP_SECRET?.length ?? 0) < 32)
-    throw new ConfigurationError("APP_SECRET");
-  if ((env.BOOTSTRAP_CODE?.length ?? 0) < 12)
-    throw new ConfigurationError("BOOTSTRAP_CODE");
+  const issue = configurationIssues(env)[0];
+  if (issue) throw new ConfigurationError(issue.field, issue.reason);
   return {
-    url,
-    key,
+    url: env.SUPABASE_URL!.trim(),
+    key: env.SUPABASE_SERVICE_ROLE_KEY!.trim(),
     secret: env.APP_SECRET!,
     bootstrapCode: env.BOOTSTRAP_CODE!,
   };
@@ -61,14 +102,17 @@ export type LoginDiagnostic = {
   message: string;
   upstreamCode?: string;
   status?: number;
+  configurationField?: ConfigurationField;
+  configurationReason?: ConfigurationIssue["reason"];
 };
 
 export function loginDiagnostic(error: unknown): LoginDiagnostic {
   if (error instanceof ConfigurationError)
     return {
       category: "CONFIG",
-      message:
-        "Не удалось войти (CONFIG). Организатору нужно проверить переменные окружения и повторить деплой.",
+      configurationField: error.field,
+      configurationReason: error.reason,
+      message: `Не удалось войти (CONFIG). ${configurationIssueMessage(error)} Проверьте настройки Production в Vercel и выполните Redeploy.`,
     };
   const detail =
     error && typeof error === "object"
